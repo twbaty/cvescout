@@ -1,3 +1,4 @@
+#/app/models.py
 from sqlalchemy import (
     Column, Integer, String, Boolean, Float, Text,
     DateTime, ForeignKey, Enum
@@ -7,6 +8,35 @@ from datetime import datetime
 from .db import Base
 import enum
 
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy.sql import func
+
+class CPEDictionary(Base):
+    __tablename__ = "cpe_dictionary"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cpe_uri = Column(String, unique=True, index=True)
+    part = Column(String)       # a, o, h
+    vendor = Column(String, index=True)
+    product = Column(String, index=True)
+    version = Column(String, index=True)
+    update = Column(String)
+    edition = Column(String)
+    language = Column(String)
+    sw_edition = Column(String)
+    target_sw = Column(String)
+    target_hw = Column(String)
+    other = Column(String)
+
+    titles = Column(Text)       # raw JSON from NVD (optional)
+    deprecated = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
 
 # ----------------------------
 # Enums
