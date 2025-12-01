@@ -1,5 +1,6 @@
 # app/web/__init__.py
 from flask import Blueprint
+from . import products 
 
 bp = Blueprint(
     "web",
@@ -8,3 +9,4 @@ bp = Blueprint(
 )
 
 from . import routes
+
