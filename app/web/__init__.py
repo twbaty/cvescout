@@ -1,6 +1,5 @@
 # app/web/__init__.py
 from flask import Blueprint
-from . import products 
 
 bp = Blueprint(
     "web",
@@ -8,5 +7,4 @@ bp = Blueprint(
     template_folder="templates"
 )
 
-from . import routes
-
+from . import routes  # noqa: E402
