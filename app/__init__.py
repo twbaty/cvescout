@@ -1,7 +1,7 @@
+# app/__init__.py
 from flask import Flask
 from .db import engine, Base
 from .webapp import bp as web_bp
-app.register_blueprint(web_bp)
 
 
 def create_app():
