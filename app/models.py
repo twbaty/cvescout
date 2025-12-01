@@ -94,6 +94,18 @@ class CVECPE(Base):
 # Impacts (CVE hits your product)
 # ----------------------------
 
+class CPEDictionary(Base):
+    __tablename__ = "cpe_dictionary"
+
+    id = Column(Integer, primary_key=True)
+    cpe_uri = Column(String, unique=True, index=True)
+    vendor = Column(String)
+    product = Column(String)
+    version = Column(String)
+    deprecated = Column(Boolean, default=False)
+    raw_json = Column(Text)
+
+
 class Impact(Base):
     __tablename__ = "impacts"
 
