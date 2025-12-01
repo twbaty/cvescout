@@ -1,4 +1,6 @@
 # app/__init__.py
+Base.metadata.create_all(bind=engine)
+
 from flask import Flask
 from .db import engine, Base
 
