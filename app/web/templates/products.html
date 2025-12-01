@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Products</title>
+</head>
+<body>
+    <h1>Products</h1>
+
+    <form action="{{ url_for('web.upload_products') }}" method="POST" enctype="multipart/form-data">
+        <label>Upload CSV:</label>
+        <input type="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+
+    <hr>
+
+    <table border="1" cellpadding="6">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Vendor</th>
+                <th>Name</th>
+                <th>Version</th>
+                <th>CPE URI</th>
+                <th>Tags</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+
+        <tbody>
+        {% for p in products %}
+            <tr>
+                <td>{{ p.id }}</td>
+                <td>{{ p.vendor }}</td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.version }}</td>
+                <td>{{ p.cpe_uri }}</td>
+                <td>{{ p.tags }}</td>
+                <td>{{ 'yes' if p.active else 'no' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+</body>
+</html>
