@@ -1,4 +1,12 @@
 #/app/web/__init__.py
+
+print(">>> web/__init__.py running")
+from . import routes
+print(">>> imported routes")
+from . import products
+print(">>> imported products")
+
+
 from flask import Blueprint
 
 bp = Blueprint(
@@ -12,3 +20,4 @@ from . import routes
 
 # Other modules AFTER routes
 from . import products
+
