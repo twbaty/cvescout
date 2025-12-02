@@ -1,14 +1,15 @@
-# app/config.py
 import os
 from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_DB_PATH = os.path.join(BASE_DIR, "cvescout.db")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 load_dotenv()
 
-# Always an absolute sqlite path
-DB_PATH = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
+# ---- DATABASE ----
+DB_NAME = os.environ.get("DB_NAME", "cve_scout.db")
+DB_PATH = os.path.join(os.path.dirname(BASE_DIR), DB_NAME)
 
-# API Key: must come only from environment
-NVD_API_KEY = os.getenv("NVD_API_KEY", "")
+SQLALCHEMY_DATABASE_URI = f"sqlite:///{DB_PATH}"
+
+# ---- NVD API KEY ----
+NVD_API_KEY = os.environ.get("NVD_API_KEY", "")
