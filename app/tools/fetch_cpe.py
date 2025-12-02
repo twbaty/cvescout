@@ -1,68 +1,81 @@
-#app/tools/fetch_cpe.py
+# app/tools/fetch_cpe.py
 """
-Fetches the full CPE dictionary from the official NVD bulk data feed.
-No paging. No API calls. Fully compliant with NVD Terms.
+Fetches the full CPE dictionary from NVD (JSON.gz file)
+and loads it into the CPEDictionary table.
 
-Source:
-https://nvd.nist.gov/products/cpe
+This method avoids the deprecated CPE REST API.
 """
 
 import os
-import gzip
 import json
+import gzip
 import urllib.request
+import tempfile
 
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/official-cpe-dictionary_v2.3.json.gz"
+CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/dictionary/official-cpe-dictionary_v2.3.json.gz"
+
 
 def download_cpe():
-    print(">>> Downloading CPE dictionary...")
-    tmp_path = "official-cpe-dictionary.json.gz"
-    urllib.request.urlretrieve(CPE_URL, tmp_path)
-    return tmp_path
+    """Download the gzipped CPE dictionary."""
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json.gz")
+    tmp.close()
 
-def load_cpe(path):
-    print(">>> Decompressing and loading JSON...")
+    print(f">>> Downloading: {CPE_URL}")
+    urllib.request.urlretrieve(CPE_URL, tmp.name)
+    return tmp.name
+
+
+def load_json_gz(path):
+    """Load and decompress the gzipped JSON."""
     with gzip.open(path, "rt", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get("matches", [])
+        return json.load(f)
+
 
 def fetch_and_import():
     print(">>> Starting CPE dictionary import...")
 
     gz_path = download_cpe()
-    entries = load_cpe(gz_path)
+    print(">>> Decompressing JSON...")
+    data = load_json_gz(gz_path)
+
+    items = data.get("matches", [])
+    print(f">>> Total entries in dictionary: {len(items)}")
 
     db = SessionLocal()
     db.query(CPEDictionary).delete()
     db.commit()
 
     count = 0
-    for item in entries:
-        cpe23 = item.get("cpe23Uri")
-        if not cpe23:
+
+    for entry in items:
+        cpe = entry.get("cpe23Uri")
+        if not cpe:
             continue
 
-        parts = cpe23.split(":")
-        vendor = parts[3] if len(parts) > 3 else ""
-        product = parts[4] if len(parts) > 4 else ""
-        version = parts[5] if len(parts) > 5 else ""
+        vendor = entry.get("vendor", "")
+        product = entry.get("product", "")
+        version = entry.get("version", "")
 
         row = CPEDictionary(
             vendor=vendor,
             product=product,
             version=version,
-            cpe_uri=cpe23
+            cpe_uri=cpe,
         )
         db.add(row)
         count += 1
+
+        if count % 2000 == 0:
+            db.commit()
 
     db.commit()
     db.close()
 
     print(f">>> DONE. Imported {count} CPE entries.")
+
 
 if __name__ == "__main__":
     fetch_and_import()
