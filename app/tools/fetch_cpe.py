@@ -1,63 +1,61 @@
-# app/tools/fetch_cpe.py
-
 import gzip
 import json
 import urllib.request
+
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/1.0/nvdcpelist.json.gz"
-
+CPE_URL = (
+    "https://csrc.nist.gov/csrc/media/Projects/national-vulnerability-database/"
+    "data-feeds/json/cpe/official-cpe-dictionary_v2.3.json.gz"
+)
 
 def fetch_and_import():
     print(">>> Downloading CPE dictionary...")
 
-    # Download compressed JSON
+    # ---- Download .gz ----
     response = urllib.request.urlopen(CPE_URL)
-    compressed_data = response.read()
+    gz_data = response.read()
 
-    print(">>> Decompressing...")
-    data = gzip.decompress(compressed_data)
+    print(f">>> Downloaded {len(gz_data):,} bytes (compressed)")
 
-    print(">>> Parsing JSON...")
-    parsed = json.loads(data)
+    # ---- Decompress ----
+    json_data = gzip.decompress(gz_data).decode("utf-8")
+    data = json.loads(json_data)
 
-    items = parsed.get("cpeItems", [])
-    print(f">>> Found {len(items)} CPE entries")
+    items = data.get("matches", [])
+    print(f">>> Parsed {len(items):,} CPE entries")
 
     db = SessionLocal()
+    inserted = 0
 
     try:
-        print(">>> Clearing existing CPE dictionary...")
+        # Optional: wipe old entries
         db.query(CPEDictionary).delete()
 
-        count = 0
         for item in items:
-            meta = item.get("cpe23Uri", "")
+            cpe23 = item.get("cpe23Uri", "")
+            parts = cpe23.split(":")
 
-            # CPE format: cpe:2.3:a:microsoft:office:365:::
-            parts = meta.split(":")
-            if len(parts) < 5:
-                continue
+            vendor = parts[3] if len(parts) > 3 else ""
+            product = parts[4] if len(parts) > 4 else ""
+            version = parts[5] if len(parts) > 5 else ""
 
-            _, _, part, vendor, product, version, *rest = parts + [None] * 7
-
-            cpe_entry = CPEDictionary(
-                vendor=vendor or "",
-                product=product or "",
-                version=version or "",
-                cpe_uri=meta
-            )
-
-            db.add(cpe_entry)
-            count += 1
+            db.add(CPEDictionary(
+                vendor=vendor,
+                product=product,
+                version=version,
+                cpe_uri=cpe23
+            ))
+            inserted += 1
 
         db.commit()
-        print(f">>> Imported {count} CPE records.")
+        print(f">>> Inserted {inserted:,} CPE records into DB.")
 
     except Exception as e:
         db.rollback()
-        print("!!! ERROR:", e)
+        print("!!! ERROR importing CPEs:", e)
+
     finally:
         db.close()
 
