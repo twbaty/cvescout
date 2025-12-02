@@ -8,25 +8,38 @@
 <h1>Add Product</h1>
 
 <form action="/products/add" method="POST">
+    <label>Vendor:</label><br>
+    <input type="text" name="vendor" required><br><br>
 
-    <label>CPE:</label>
-    <select name="cpe_uri" required>
-        {% for c in cpes %}
-        <option value="{{ c.cpe_uri }}">
-            {{ c.vendor }} – {{ c.product }} – {{ c.version }}
-        </option>
+    <label>Product Name:</label><br>
+    <input type="text" name="name" required><br><br>
+
+    <label>Version:</label><br>
+    <input type="text" name="version"><br><br>
+
+    <label>CPE URI:</label><br>
+    <select name="cpe_uri">
+        <option value="">(none)</option>
+        {% for cpe in cpes %}
+            <option value="{{ cpe.cpe_uri }}">
+                {{ cpe.vendor }} — {{ cpe.product }} — {{ cpe.version }}
+            </option>
         {% endfor %}
     </select>
-
     <br><br>
 
-    <label>Tags (optional):</label>
-    <input type="text" name="tags">
+    <label>Tags (comma separated):</label><br>
+    <input type="text" name="tags"><br><br>
 
-    <br><br>
+    <label>Active:</label>
+    <input type="checkbox" name="active" checked><br><br>
 
-    <button type="submit">Add Product</button>
+    <button type="submit">Save Product</button>
 </form>
+
+<p>
+    <a href="/products">Back to Products</a>
+</p>
 
 </body>
 </html>
