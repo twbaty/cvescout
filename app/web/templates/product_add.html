@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Product</title>
+</head>
+<body>
+
+<h1>Add Product</h1>
+
+<form action="/products/add" method="POST">
+
+    <label>CPE:</label>
+    <select name="cpe_uri" required>
+        {% for c in cpes %}
+        <option value="{{ c.cpe_uri }}">
+            {{ c.vendor }} – {{ c.product }} – {{ c.version }}
+        </option>
+        {% endfor %}
+    </select>
+
+    <br><br>
+
+    <label>Tags (optional):</label>
+    <input type="text" name="tags">
+
+    <br><br>
+
+    <button type="submit">Add Product</button>
+</form>
+
+</body>
+</html>
