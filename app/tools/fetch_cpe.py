@@ -3,55 +3,61 @@
 import gzip
 import json
 import urllib.request
-
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/dictionary/official-cpe-dictionary_v2.3.json.gz"
+CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/1.0/nvdcpelist.json.gz"
+
 
 def fetch_and_import():
     print(">>> Downloading CPE dictionary...")
+
+    # Download compressed JSON
     response = urllib.request.urlopen(CPE_URL)
-    data = gzip.decompress(response.read())
+    compressed_data = response.read()
+
+    print(">>> Decompressing...")
+    data = gzip.decompress(compressed_data)
 
     print(">>> Parsing JSON...")
-    doc = json.loads(data)
+    parsed = json.loads(data)
 
-    items = doc.get("matchString", [])
+    items = parsed.get("cpeItems", [])
     print(f">>> Found {len(items)} CPE entries")
 
     db = SessionLocal()
 
     try:
-        inserted = 0
+        print(">>> Clearing existing CPE dictionary...")
+        db.query(CPEDictionary).delete()
 
-        for entry in items:
-            cpe = entry.get("criteria")
-            if not cpe:
+        count = 0
+        for item in items:
+            meta = item.get("cpe23Uri", "")
+
+            # CPE format: cpe:2.3:a:microsoft:office:365:::
+            parts = meta.split(":")
+            if len(parts) < 5:
                 continue
 
-            # split URI
-            parts = cpe.split(":")
-            vendor  = parts[3] if len(parts) > 3 else ""
-            product = parts[4] if len(parts) > 4 else ""
-            version = parts[5] if len(parts) > 5 else ""
+            _, _, part, vendor, product, version, *rest = parts + [None] * 7
 
-            row = CPEDictionary(
-                vendor=vendor,
-                product=product,
-                version=version,
-                cpe_uri=cpe
+            cpe_entry = CPEDictionary(
+                vendor=vendor or "",
+                product=product or "",
+                version=version or "",
+                cpe_uri=meta
             )
-            db.add(row)
-            inserted += 1
+
+            db.add(cpe_entry)
+            count += 1
 
         db.commit()
-        print(f">>> Imported {inserted} CPE rows")
+        print(f">>> Imported {count} CPE records.")
 
     except Exception as e:
         db.rollback()
         print("!!! ERROR:", e)
-
     finally:
         db.close()
 
