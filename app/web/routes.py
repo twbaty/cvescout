@@ -1,4 +1,6 @@
 #/app/web/routes.py
+print(">>> routes.py loaded")
+
 from flask import render_template
 from . import bp
 
