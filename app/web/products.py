@@ -2,6 +2,7 @@
 
 import csv
 from io import TextIOWrapper
+
 from flask import request, render_template, redirect, url_for, flash
 
 from . import bp
@@ -15,43 +16,122 @@ from app.models import Product, CPEDictionary
 @bp.route("/products", methods=["GET"])
 def products():
     db = SessionLocal()
-    rows = db.query(Product).order_by(Product.id).all()
-    db.close()
+    try:
+        rows = db.query(Product).order_by(Product.id).all()
+    finally:
+        db.close()
+
     return render_template("products.html", products=rows)
 
-# -------------------------------
-# PRODUCT SELECT
-#----------------------------------
+
+# ----------------------------------------------------------------------
+# SELECT PRODUCTS (checkbox UI backed by CPEDictionary)
+# ----------------------------------------------------------------------
 @bp.route("/products/select", methods=["GET"])
 def select_products():
     db = SessionLocal()
-    rows = db.query(Product).order_by(Product.vendor, Product.name).all()
-    db.close()
-    return render_template("product_select.html", products=rows)
+    try:
+        # All known CPEs (world)
+        cpes = (
+            db.query(CPEDictionary)
+            .order_by(CPEDictionary.vendor, CPEDictionary.product, CPEDictionary.version)
+            .all()
+        )
+
+        # Current selections (what we care about)
+        selected_cpes = {
+            p.cpe_uri
+            for p in db.query(Product).filter(Product.cpe_uri.isnot(None), Product.active.is_(True)).all()
+        }
+    finally:
+        db.close()
+
+    return render_template(
+        "products_select.html",
+        cpes=cpes,
+        selected_cpes=selected_cpes,
+    )
+
+
+@bp.route("/products/select/submit", methods=["POST"])
+def select_products_submit():
+    # All CPEs the user checked in the form
+    chosen_cpes = set(request.form.getlist("cpe_uri"))
+
+    db = SessionLocal()
+    try:
+        # Map existing products by cpe_uri
+        existing = {
+            p.cpe_uri: p
+            for p in db.query(Product).filter(Product.cpe_uri.isnot(None)).all()
+        }
+
+        # Turn ON / create for all selected CPEs
+        for cpe in chosen_cpes:
+            if not cpe:
+                continue
+
+            if cpe in existing:
+                # Already in products → just make sure it's active
+                existing[cpe].active = True
+                continue
+
+            # Not in products yet → create from CPEDictionary
+            cpe_row = db.query(CPEDictionary).filter_by(cpe_uri=cpe).first()
+            if not cpe_row:
+                # Shouldn't happen if DB is consistent, but don't blow up
+                continue
+
+            p = Product(
+                vendor=cpe_row.vendor or "",
+                name=cpe_row.product or "",
+                version=cpe_row.version or "",
+                cpe_uri=cpe_row.cpe_uri,
+                tags="",        # you can enrich later
+                active=True,
+            )
+            db.add(p)
+
+        # Turn OFF anything that is no longer selected
+        for cpe, prod in existing.items():
+            if cpe not in chosen_cpes:
+                prod.active = False
+
+        db.commit()
+        flash("Product selection updated.", "success")
+
+    except Exception as e:
+        db.rollback()
+        flash(f"Error saving selection: {e}", "error")
+
+    finally:
+        db.close()
+
+    return redirect(url_for("web.products"))
+
 
 # ----------------------------------------------------------------------
-# ADD PRODUCT (GET form)
+# ADD PRODUCT (manual single record)
 # ----------------------------------------------------------------------
 @bp.route("/products/add", methods=["GET"])
 def add_product_form():
     db = SessionLocal()
-    cpes = db.query(CPEDictionary).order_by(
-        CPEDictionary.vendor,
-        CPEDictionary.product,
-        CPEDictionary.version
-    ).all()
-    db.close()
+    try:
+        cpes = (
+            db.query(CPEDictionary)
+            .order_by(CPEDictionary.vendor, CPEDictionary.product, CPEDictionary.version)
+            .all()
+        )
+    finally:
+        db.close()
 
     return render_template("products_add.html", cpes=cpes)
 
 
-# ----------------------------------------------------------------------
-# ADD PRODUCT (POST submit)
-# ----------------------------------------------------------------------
 @bp.route("/products/add", methods=["POST"])
 def add_product_submit():
     vendor = request.form.get("vendor", "").strip()
-    name   = request.form.get("name", "").strip()
+    name = request.form.get("name", "").strip()
     version = request.form.get("version", "").strip()
     cpe_uri = request.form.get("cpe_uri", "").strip()
     tags = request.form.get("tags", "").strip()
@@ -62,7 +142,6 @@ def add_product_submit():
         return redirect(url_for("web.add_product_form"))
 
     db = SessionLocal()
-
     try:
         p = Product(
             vendor=vendor,
@@ -70,16 +149,14 @@ def add_product_submit():
             version=version,
             cpe_uri=cpe_uri,
             tags=tags,
-            active=active
+            active=active,
         )
         db.add(p)
         db.commit()
         flash("Product added.", "success")
-
     except Exception as e:
         db.rollback()
         flash(f"Error adding product: {e}", "error")
-
     finally:
         db.close()
 
@@ -101,7 +178,6 @@ def upload_products():
         return redirect(url_for("web.products"))
 
     db = SessionLocal()
-
     try:
         wrapper = TextIOWrapper(file, encoding="utf-8")
         reader = csv.DictReader(wrapper)
@@ -113,7 +189,7 @@ def upload_products():
                 version=row.get("version", "").strip(),
                 cpe_uri=row.get("cpe_uri", "").strip(),
                 tags=row.get("tags", "").strip(),
-                active=row.get("active", "true").lower() in ("true", "1", "yes")
+                active=row.get("active", "true").lower() in ("true", "1", "yes"),
             )
             db.add(product)
 
