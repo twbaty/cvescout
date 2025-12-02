@@ -1,106 +1,98 @@
-import json
+# app/tools/fetch_cpe.py
+"""
+Fetches the full CPE catalog from the NVD API v2 and stores it
+into the CPEDictionary table.
+
+Requires environment variable: NVD_API_KEY
+"""
+
+import os
 import time
-import sys
+import json
 import urllib.request
 import urllib.parse
+
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-API_URL = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
-API_KEY = ""   # ← PUT YOUR API KEY HERE
+
+API_KEY = os.getenv("NVD_API_KEY")
+BASE_URL = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
+PAGE_SIZE = 2000   # NVD allows up to 2000 per page
 
 
-def fetch_page(keyword, start_index=0):
-    """Fetch a single page of CPE results."""
+def api_get(start_index):
+    """Call NVD API with paging."""
     params = {
-        "keywordSearch": keyword,
+        "resultsPerPage": PAGE_SIZE,
         "startIndex": start_index,
-        "resultsPerPage": 2000
+        "apiKey": API_KEY,
     }
 
-    url = API_URL + "?" + urllib.parse.urlencode(params)
-
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "apiKey": API_KEY
-        }
-    )
+    url = BASE_URL + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"User-Agent": "cvescout/1.0"})
 
     with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        data = resp.read().decode("utf-8")
+        return json.loads(data)
 
 
-def fetch_all(keyword):
-    """Fetch all CPE entries for a given keyword."""
-    print(f">>> Fetching CPEs for keyword: {keyword}")
-    results = []
+def fetch_and_import():
+    if not API_KEY:
+        print("ERROR: Missing NVD_API_KEY environment variable.")
+        return
 
-    start = 0
+    print(">>> Fetching CPE records from NVD API...")
+
+    db = SessionLocal()
+    db.query(CPEDictionary).delete()   # wipe old entries
+    db.commit()
+
+    total_collected = 0
+    start_index = 0
+
     while True:
-        data = fetch_page(keyword, start)
-        cpes = data.get("products", [])
-        results.extend(cpes)
+        print(f">>> Fetching page starting at {start_index}...")
+        data = api_get(start_index)
 
-        total = data.get("totalResults", 0)
-        print(f"    downloaded {len(results)}/{total}")
-
-        if len(results) >= total:
+        cpe_data = data.get("products", [])
+        if not cpe_data:
             break
 
-        start += 2000
-        time.sleep(1.2)  # NVD rate limit
+        for entry in cpe_data:
+            cpe = entry.get("cpe", {})
+            uri = cpe.get("cpeName")
+            vendor = cpe.get("cpeVendor", "")
+            product = cpe.get("cpeProduct", "")
+            version = cpe.get("cpeVersion", "")
 
-    return results
-
-
-def import_cpes(keyword):
-    db = SessionLocal()
-
-    try:
-        entries = fetch_all(keyword)
-        print(f">>> Importing {len(entries)} CPE records...")
-
-        for item in entries:
-            cpe23 = item.get("cpe", {})
-            if not cpe23:
+            if not uri:
                 continue
 
-            part = cpe23.get("part")
-            vendor = cpe23.get("vendor")
-            product = cpe23.get("product")
-            version = cpe23.get("version")
-
-            uri = f"cpe:2.3:{part}:{vendor}:{product}:{version}"
-
-            db.add(
-                CPEDictionary(
-                    vendor=vendor or "",
-                    product=product or "",
-                    version=version or "",
-                    cpe_uri=uri
-                )
+            row = CPEDictionary(
+                vendor=vendor,
+                product=product,
+                version=version,
+                cpe_uri=uri,
             )
+            db.add(row)
+            total_collected += 1
 
         db.commit()
-        print(">>> Import completed.")
-    except Exception as e:
-        db.rollback()
-        print("ERROR:", e)
-    finally:
-        db.close()
 
+        # Paging logic
+        total_results = data.get("totalResults", 0)
+        start_index += PAGE_SIZE
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python -m app.tools.fetch_cpe <keyword>")
-        print("Example: python -m app.tools.fetch_cpe windows")
-        sys.exit(1)
+        if start_index >= total_results:
+            break
 
-    keyword = sys.argv[1]
-    import_cpes(keyword)
+        # Respect NVD rate limits
+        time.sleep(1.2)
+
+    db.close()
+    print(f">>> DONE. Imported {total_collected} CPE entries.")
 
 
 if __name__ == "__main__":
-    main()
+    fetch_and_import()
