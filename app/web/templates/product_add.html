@@ -26,10 +26,17 @@
             {{ c.vendor }} — {{ c.product }} — {{ c.version or "*" }}
         </option>
         {% endfor %}
-    </select><br><br>
+    </select>
+    <br><br>
 
-    <label>Tags (comma-separated):</label><br>
-    <input type="text" name="tags"><br><br>
+    <label>Tags:</label><br>
+    {% for tag in tags %}
+        <label>
+            <input type="checkbox" name="tags" value="{{ tag }}">
+            {{ tag }}
+        </label><br>
+    {% endfor %}
+    <br>
 
     <label>
         <input type="checkbox" name="active" checked>
