@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Products</title>
+</head>
+<body>
+
+<h1>Select Products</h1>
+
+<form action="{{ url_for('web.select_products_submit') }}" method="POST">
+    <table border="1" cellpadding="6">
+        <thead>
+            <tr>
+                <th>Select</th>
+                <th>Vendor</th>
+                <th>Product</th>
+                <th>Version</th>
+                <th>CPE URI</th>
+            </tr>
+        </thead>
+
+        <tbody>
+        {% for c in cpes %}
+            <tr>
+                <td>
+                    <input
+                        type="checkbox"
+                        name="cpe_uri"
+                        value="{{ c.cpe_uri }}"
+                        {% if c.cpe_uri in selected_cpes %}checked{% endif %}
+                    >
+                </td>
+                <td>{{ c.vendor }}</td>
+                <td>{{ c.product }}</td>
+                <td>{{ c.version or "*" }}</td>
+                <td>{{ c.cpe_uri }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <br>
+    <button type="submit">Save Selection</button>
+</form>
+
+<hr>
+
+<a href="{{ url_for('web.products') }}">Back to Product List</a>
+
+</body>
+</html>
