@@ -17,7 +17,7 @@ from app.models import CPEDictionary
 
 
 API_KEY = os.getenv("NVD_API_KEY")
-BASE_URL = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
+BASE_URL = "https://services.nvd.nist.gov/rest/json/cpe/2.0"
 PAGE_SIZE = 2000   # NVD allows up to 2000 per page
 
 
