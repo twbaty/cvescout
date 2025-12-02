@@ -1,54 +1,60 @@
-#app/tools/fetch_cpe.py
+# app/tools/fetch_cpe.py
+
 import gzip
 import json
 import urllib.request
+
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-CPE_URL = (
-    "https://nvd.nist.gov/feeds/json/cpe/2.3/nvdcpes-1.0.json.gz"
-)
+CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/dictionary/official-cpe-dictionary_v2.3.json.gz"
 
-def fetch_and_import_cpe():
-    print("Downloading CPE dictionary…")
-    resp = urllib.request.urlopen(CPE_URL)
-    raw = gzip.decompress(resp.read())
+def fetch_and_import():
+    print(">>> Downloading CPE dictionary...")
+    response = urllib.request.urlopen(CPE_URL)
+    data = gzip.decompress(response.read())
 
-    data = json.loads(raw)
-    items = data.get("matches", [])
+    print(">>> Parsing JSON...")
+    doc = json.loads(data)
 
-    print(f"Received {len(items)} CPE entries.")
+    items = doc.get("matchString", [])
+    print(f">>> Found {len(items)} CPE entries")
 
     db = SessionLocal()
 
-    # wipe the dictionary first (optional)
-    db.query(CPEDictionary).delete()
+    try:
+        inserted = 0
 
-    count = 0
-    for entry in items:
-        cpe_uri = entry.get("cpe23Uri")
-        parts = entry.get("cpe_name", [{}])[0].get("cpe_name", "")
+        for entry in items:
+            cpe = entry.get("criteria")
+            if not cpe:
+                continue
 
-        # vendor/product/version parsing
-        # cpe:/a:microsoft:office:16  → split on ':'
-        vendor, product, version = "", "", ""
-        try:
-            fields = cpe_uri.split(":")
-            vendor = fields[3]
-            product = fields[4]
-            version = fields[5]
-        except Exception:
-            pass
+            # split URI
+            parts = cpe.split(":")
+            vendor  = parts[3] if len(parts) > 3 else ""
+            product = parts[4] if len(parts) > 4 else ""
+            version = parts[5] if len(parts) > 5 else ""
 
-        db.add(CPEDictionary(
-            vendor=vendor,
-            product=product,
-            version=version,
-            cpe_uri=cpe_uri
-        ))
-        count += 1
+            row = CPEDictionary(
+                vendor=vendor,
+                product=product,
+                version=version,
+                cpe_uri=cpe
+            )
+            db.add(row)
+            inserted += 1
 
-    db.commit()
-    db.close()
+        db.commit()
+        print(f">>> Imported {inserted} CPE rows")
 
-    print(f"Imported {count} CPE records.")
+    except Exception as e:
+        db.rollback()
+        print("!!! ERROR:", e)
+
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    fetch_and_import()
