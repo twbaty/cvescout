@@ -19,6 +19,15 @@ def products():
     db.close()
     return render_template("products.html", products=rows)
 
+# -------------------------------
+# PRODUCT SELECT
+#----------------------------------
+@bp.route("/products/select", methods=["GET"])
+def select_products():
+    db = SessionLocal()
+    rows = db.query(Product).order_by(Product.vendor, Product.name).all()
+    db.close()
+    return render_template("product_select.html", products=rows)
 
 # ----------------------------------------------------------------------
 # ADD PRODUCT (GET form)
