@@ -69,27 +69,33 @@ def products():
 # ----------------------------------------------------------------------
 # SELECT PRODUCTS (checkbox UI backed by CPEDictionary)
 # ----------------------------------------------------------------------
-@bp.route("/products/select", methods=["GET"])
-def select_products():
+@bp.route("/products/select", methods=["POST"])
+def select_products_submit():
+    selected = request.form.getlist("cpe_uri")
+
     db = SessionLocal()
 
-    # Pull all CPE dictionary entries
-    rows = db.query(CPEDictionary).order_by(
-        CPEDictionary.vendor,
-        CPEDictionary.product,
-        CPEDictionary.version
-    ).all()
+    # Clear existing products
+    db.query(Product).delete()
 
-    # Get already-selected CPE URIs
-    selected = {p.cpe_uri for p in db.query(Product).all()}
+    # Insert new selections
+    for uri in selected:
+        c = db.query(CPEDictionary).filter_by(cpe_uri=uri).first()
+        if c:
+            db.add(Product(
+                vendor=c.vendor,
+                name=c.product,
+                version=c.version,
+                cpe_uri=c.cpe_uri,
+                tags="",        # you can populate later
+                active=True
+            ))
 
+    db.commit()
     db.close()
 
-    return render_template(
-        "product_select.html",
-        cpes=rows,
-        selected_cpes=selected
-    )
+    return redirect(url_for("web.products"))
+
 
 
 
