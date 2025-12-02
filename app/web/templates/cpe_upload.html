@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload CPE Dictionary</title>
+</head>
+<body>
+
+<h1>Upload CPE Dictionary</h1>
+
+<form action="{{ url_for('web.cpe_upload_submit') }}" method="POST" enctype="multipart/form-data">
+    <label>Upload CPE CSV:</label>
+    <input type="file" name="file" required>
+    <button type="submit">Upload</button>
+</form>
+
+<hr>
+
+<a href="{{ url_for('web.products') }}">Back to Product List</a>
+
+</body>
+</html>
