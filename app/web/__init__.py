@@ -2,14 +2,9 @@
 
 from flask import Blueprint
 
-# 1️⃣ Create the blueprint FIRST
-bp = Blueprint(
-    "web",
-    __name__,
-    template_folder="templates"
-)
+bp = Blueprint("web", __name__, template_folder="templates")
 
-# 2️⃣ Import route modules AFTER bp exists
+# Import views AFTER creating bp to avoid circular imports
 from . import routes
 from . import products
 from . import cpe
