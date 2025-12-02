@@ -30,27 +30,25 @@ def products():
 @bp.route("/products/select", methods=["GET"])
 def select_products():
     db = SessionLocal()
-    try:
-        # All known CPEs (world)
-        cpes = (
-            db.query(CPEDictionary)
-            .order_by(CPEDictionary.vendor, CPEDictionary.product, CPEDictionary.version)
-            .all()
-        )
 
-        # Current selections (what we care about)
-        selected_cpes = {
-            p.cpe_uri
-            for p in db.query(Product).filter(Product.cpe_uri.isnot(None), Product.active.is_(True)).all()
-        }
-    finally:
-        db.close()
+    cpes = db.query(CPEDictionary).order_by(
+        CPEDictionary.vendor,
+        CPEDictionary.product,
+        CPEDictionary.version
+    ).all()
+
+    # Load previously selected CPEs via Product table
+    existing = db.query(Product.cpe_uri).filter(Product.cpe_uri != "").all()
+    selected_cpes = set([row[0] for row in existing])
+
+    db.close()
 
     return render_template(
         "products_select.html",
         cpes=cpes,
-        selected_cpes=selected_cpes,
+        selected_cpes=selected_cpes
     )
+
 
 
 @bp.route("/products/select/submit", methods=["POST"])
