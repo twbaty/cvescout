@@ -1,33 +1,27 @@
-# app/web/products.py
-
+#app/web/products.py
 import csv
-from io import TextIOWrapper
-
-from flask import request, render_template, redirect, url_for, flash
+from io import TextIOWrapper, StringIO
+from flask import request, render_template, redirect, url_for, flash, Response
 
 from . import bp
 from app.db import SessionLocal
 from app.models import Product, CPEDictionary
 
-# ----------------------------------------------------------------------
+
+# ---------------------------------------------------------
 # EXPORT PRODUCTS AS CSV
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------
 @bp.route("/products/export", methods=["GET"])
 def export_products():
     db = SessionLocal()
     rows = db.query(Product).order_by(Product.id).all()
     db.close()
 
-    # Build CSV content
-    import csv
-    from io import StringIO
     si = StringIO()
     writer = csv.writer(si)
 
-    # header row
     writer.writerow(["id", "vendor", "name", "version", "cpe_uri", "tags", "active"])
 
-    # data rows
     for p in rows:
         writer.writerow([
             p.id,
@@ -39,109 +33,86 @@ def export_products():
             "yes" if p.active else "no"
         ])
 
-    output = si.getvalue()
-    si.close()
-
-    # Return file download
-    from flask import Response
     return Response(
-        output,
+        si.getvalue(),
         mimetype="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=products_export.csv"
-        }
+        headers={"Content-Disposition": "attachment; filename=products_export.csv"}
     )
 
-# ----------------------------------------------------------------------
+
+# ---------------------------------------------------------
 # LIST PRODUCTS
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------
 @bp.route("/products", methods=["GET"])
 def products():
     db = SessionLocal()
-    try:
-        rows = db.query(Product).order_by(Product.id).all()
-    finally:
-        db.close()
-
+    rows = db.query(Product).order_by(Product.id).all()
+    db.close()
     return render_template("products.html", products=rows)
 
 
-# ----------------------------------------------------------------------
-# SELECT PRODUCTS (checkbox UI backed by CPEDictionary)
-# ----------------------------------------------------------------------
-@bp.route("/products/select", methods=["POST"])
-def select_products_submit():
-    selected = request.form.getlist("cpe_uri")
+# =========================================================
+# SELECT PRODUCTS FROM CPE DICTIONARY (CHECKBOX UI)
+# =========================================================
 
+# --- GET FORM ---
+@bp.route("/products/select", methods=["GET"])
+def select_products():
     db = SessionLocal()
+    cpes = (
+        db.query(CPEDictionary)
+        .order_by(CPEDictionary.vendor, CPEDictionary.product, CPEDictionary.version)
+        .all()
+    )
 
-    # Clear existing products
-    db.query(Product).delete()
+    # currently selected (active) products
+    active = {
+        p.cpe_uri
+        for p in db.query(Product).filter(Product.active == True).all()
+    }
 
-    # Insert new selections
-    for uri in selected:
-        c = db.query(CPEDictionary).filter_by(cpe_uri=uri).first()
-        if c:
-            db.add(Product(
-                vendor=c.vendor,
-                name=c.product,
-                version=c.version,
-                cpe_uri=c.cpe_uri,
-                tags="",        # you can populate later
-                active=True
-            ))
-
-    db.commit()
     db.close()
 
-    return redirect(url_for("web.products"))
+    return render_template(
+        "product_select.html",
+        cpes=cpes,
+        selected_cpes=active
+    )
 
 
-
-
-
+# --- POST SUBMIT ---
 @bp.route("/products/select/submit", methods=["POST"])
 def select_products_submit():
-    # All CPEs the user checked in the form
-    chosen_cpes = set(request.form.getlist("cpe_uri"))
+    chosen = set(request.form.getlist("cpe_uri"))
 
     db = SessionLocal()
     try:
-        # Map existing products by cpe_uri
+        # map existing
         existing = {
             p.cpe_uri: p
             for p in db.query(Product).filter(Product.cpe_uri.isnot(None)).all()
         }
 
-        # Turn ON / create for all selected CPEs
-        for cpe in chosen_cpes:
-            if not cpe:
+        # Activate or create chosen
+        for uri in chosen:
+            if uri in existing:
+                existing[uri].active = True
                 continue
 
-            if cpe in existing:
-                # Already in products → just make sure it's active
-                existing[cpe].active = True
-                continue
+            c = db.query(CPEDictionary).filter_by(cpe_uri=uri).first()
+            if c:
+                db.add(Product(
+                    vendor=c.vendor,
+                    name=c.product,
+                    version=c.version,
+                    cpe_uri=c.cpe_uri,
+                    tags="",
+                    active=True
+                ))
 
-            # Not in products yet → create from CPEDictionary
-            cpe_row = db.query(CPEDictionary).filter_by(cpe_uri=cpe).first()
-            if not cpe_row:
-                # Shouldn't happen if DB is consistent, but don't blow up
-                continue
-
-            p = Product(
-                vendor=cpe_row.vendor or "",
-                name=cpe_row.product or "",
-                version=cpe_row.version or "",
-                cpe_uri=cpe_row.cpe_uri,
-                tags="",        # you can enrich later
-                active=True,
-            )
-            db.add(p)
-
-        # Turn OFF anything that is no longer selected
-        for cpe, prod in existing.items():
-            if cpe not in chosen_cpes:
+        # Deactivate unchosen
+        for uri, prod in existing.items():
+            if uri not in chosen:
                 prod.active = False
 
         db.commit()
@@ -157,21 +128,18 @@ def select_products_submit():
     return redirect(url_for("web.products"))
 
 
-# ----------------------------------------------------------------------
-# ADD PRODUCT (manual single record)
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------
+# ADD PRODUCT (MANUAL ENTRY)
+# ---------------------------------------------------------
 @bp.route("/products/add", methods=["GET"])
 def add_product_form():
     db = SessionLocal()
-    try:
-        cpes = (
-            db.query(CPEDictionary)
-            .order_by(CPEDictionary.vendor, CPEDictionary.product, CPEDictionary.version)
-            .all()
-        )
-    finally:
-        db.close()
-
+    cpes = (
+        db.query(CPEDictionary)
+        .order_by(CPEDictionary.vendor, CPEDictionary.product, CPEDictionary.version)
+        .all()
+    )
+    db.close()
     return render_template("products_add.html", cpes=cpes)
 
 
@@ -190,29 +158,30 @@ def add_product_submit():
 
     db = SessionLocal()
     try:
-        p = Product(
+        db.add(Product(
             vendor=vendor,
             name=name,
             version=version,
             cpe_uri=cpe_uri,
             tags=tags,
-            active=active,
-        )
-        db.add(p)
+            active=active
+        ))
         db.commit()
         flash("Product added.", "success")
+
     except Exception as e:
         db.rollback()
         flash(f"Error adding product: {e}", "error")
+
     finally:
         db.close()
 
     return redirect(url_for("web.products"))
 
 
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------
 # BULK UPLOAD CSV
-# ----------------------------------------------------------------------
+# ---------------------------------------------------------
 @bp.route("/products/upload", methods=["POST"])
 def upload_products():
     if "file" not in request.files:
@@ -230,15 +199,14 @@ def upload_products():
         reader = csv.DictReader(wrapper)
 
         for row in reader:
-            product = Product(
-                name=row.get("name", "").strip(),
+            db.add(Product(
                 vendor=row.get("vendor", "").strip(),
+                name=row.get("name", "").strip(),
                 version=row.get("version", "").strip(),
                 cpe_uri=row.get("cpe_uri", "").strip(),
                 tags=row.get("tags", "").strip(),
-                active=row.get("active", "true").lower() in ("true", "1", "yes"),
-            )
-            db.add(product)
+                active=row.get("active", "yes").lower() in ("true", "1", "yes")
+            ))
 
         db.commit()
         flash("Products uploaded successfully.", "success")
