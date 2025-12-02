@@ -73,23 +73,24 @@ def products():
 def select_products():
     db = SessionLocal()
 
-    cpes = db.query(CPEDictionary).order_by(
+    # Pull all CPE dictionary entries
+    rows = db.query(CPEDictionary).order_by(
         CPEDictionary.vendor,
         CPEDictionary.product,
         CPEDictionary.version
     ).all()
 
-    # Load previously selected CPEs via Product table
-    existing = db.query(Product.cpe_uri).filter(Product.cpe_uri != "").all()
-    selected_cpes = set([row[0] for row in existing])
+    # Get already-selected CPE URIs
+    selected = {p.cpe_uri for p in db.query(Product).all()}
 
     db.close()
 
     return render_template(
-        "products_select.html",
-        cpes=cpes,
-        selected_cpes=selected_cpes
+        "product_select.html",
+        cpes=rows,
+        selected_cpes=selected
     )
+
 
 
 
