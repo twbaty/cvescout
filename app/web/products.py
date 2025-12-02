@@ -9,6 +9,48 @@ from . import bp
 from app.db import SessionLocal
 from app.models import Product, CPEDictionary
 
+# ----------------------------------------------------------------------
+# EXPORT PRODUCTS AS CSV
+# ----------------------------------------------------------------------
+@bp.route("/products/export", methods=["GET"])
+def export_products():
+    db = SessionLocal()
+    rows = db.query(Product).order_by(Product.id).all()
+    db.close()
+
+    # Build CSV content
+    import csv
+    from io import StringIO
+    si = StringIO()
+    writer = csv.writer(si)
+
+    # header row
+    writer.writerow(["id", "vendor", "name", "version", "cpe_uri", "tags", "active"])
+
+    # data rows
+    for p in rows:
+        writer.writerow([
+            p.id,
+            p.vendor,
+            p.name,
+            p.version,
+            p.cpe_uri,
+            p.tags,
+            "yes" if p.active else "no"
+        ])
+
+    output = si.getvalue()
+    si.close()
+
+    # Return file download
+    from flask import Response
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=products_export.csv"
+        }
+    )
 
 # ----------------------------------------------------------------------
 # LIST PRODUCTS
