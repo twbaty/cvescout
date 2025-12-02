@@ -6,8 +6,7 @@ from . import bp
 from app.db import SessionLocal
 from app.models import Product
 
-
-@bp.route("/products")
+@bp.route("/products", strict_slashes=False)
 def products():
     db = SessionLocal()
     rows = db.query(Product).order_by(Product.id).all()
