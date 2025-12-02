@@ -1,13 +1,14 @@
-# app/db.py
+#app/db.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from .config import DB_PATH
+from .config import SQLALCHEMY_DATABASE_URI
 
 engine = create_engine(
-    f"sqlite:///{DB_PATH}",
+    SQLALCHEMY_DATABASE_URI,
     echo=False,
     future=True
 )
+
 
 SessionLocal = sessionmaker(
     bind=engine,
