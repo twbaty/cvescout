@@ -1,98 +1,68 @@
-# app/tools/fetch_cpe.py
+#app/tools/fetch_cpe.py
 """
-Fetches the full CPE catalog from the NVD API v2 and stores it
-into the CPEDictionary table.
+Fetches the full CPE dictionary from the official NVD bulk data feed.
+No paging. No API calls. Fully compliant with NVD Terms.
 
-Requires environment variable: NVD_API_KEY
+Source:
+https://nvd.nist.gov/products/cpe
 """
 
 import os
-import time
+import gzip
 import json
 import urllib.request
-import urllib.parse
 
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
+CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/official-cpe-dictionary_v2.3.json.gz"
 
-API_KEY = os.getenv("NVD_API_KEY")
-BASE_URL = "https://services.nvd.nist.gov/rest/json/cpe/2.0"
-PAGE_SIZE = 2000   # NVD allows up to 2000 per page
+def download_cpe():
+    print(">>> Downloading CPE dictionary...")
+    tmp_path = "official-cpe-dictionary.json.gz"
+    urllib.request.urlretrieve(CPE_URL, tmp_path)
+    return tmp_path
 
-
-def api_get(start_index):
-    """Call NVD API with paging."""
-    params = {
-        "resultsPerPage": PAGE_SIZE,
-        "startIndex": start_index,
-        "apiKey": API_KEY,
-    }
-
-    url = BASE_URL + "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "cvescout/1.0"})
-
-    with urllib.request.urlopen(req) as resp:
-        data = resp.read().decode("utf-8")
-        return json.loads(data)
-
+def load_cpe(path):
+    print(">>> Decompressing and loading JSON...")
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get("matches", [])
 
 def fetch_and_import():
-    if not API_KEY:
-        print("ERROR: Missing NVD_API_KEY environment variable.")
-        return
+    print(">>> Starting CPE dictionary import...")
 
-    print(">>> Fetching CPE records from NVD API...")
+    gz_path = download_cpe()
+    entries = load_cpe(gz_path)
 
     db = SessionLocal()
-    db.query(CPEDictionary).delete()   # wipe old entries
+    db.query(CPEDictionary).delete()
     db.commit()
 
-    total_collected = 0
-    start_index = 0
+    count = 0
+    for item in entries:
+        cpe23 = item.get("cpe23Uri")
+        if not cpe23:
+            continue
 
-    while True:
-        print(f">>> Fetching page starting at {start_index}...")
-        data = api_get(start_index)
+        parts = cpe23.split(":")
+        vendor = parts[3] if len(parts) > 3 else ""
+        product = parts[4] if len(parts) > 4 else ""
+        version = parts[5] if len(parts) > 5 else ""
 
-        cpe_data = data.get("products", [])
-        if not cpe_data:
-            break
+        row = CPEDictionary(
+            vendor=vendor,
+            product=product,
+            version=version,
+            cpe_uri=cpe23
+        )
+        db.add(row)
+        count += 1
 
-        for entry in cpe_data:
-            cpe = entry.get("cpe", {})
-            uri = cpe.get("cpeName")
-            vendor = cpe.get("cpeVendor", "")
-            product = cpe.get("cpeProduct", "")
-            version = cpe.get("cpeVersion", "")
-
-            if not uri:
-                continue
-
-            row = CPEDictionary(
-                vendor=vendor,
-                product=product,
-                version=version,
-                cpe_uri=uri,
-            )
-            db.add(row)
-            total_collected += 1
-
-        db.commit()
-
-        # Paging logic
-        total_results = data.get("totalResults", 0)
-        start_index += PAGE_SIZE
-
-        if start_index >= total_results:
-            break
-
-        # Respect NVD rate limits
-        time.sleep(1.2)
-
+    db.commit()
     db.close()
-    print(f">>> DONE. Imported {total_collected} CPE entries.")
 
+    print(f">>> DONE. Imported {count} CPE entries.")
 
 if __name__ == "__main__":
     fetch_and_import()
