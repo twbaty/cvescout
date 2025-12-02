@@ -1,4 +1,4 @@
-#app/db.py
+# app/db.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import DB_PATH
@@ -18,9 +18,8 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
-
 def get_session():
-    """Context-managed session helper."""
+    """Provide a SQLAlchemy session."""
     session = SessionLocal()
     try:
         yield session
