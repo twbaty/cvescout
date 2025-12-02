@@ -1,6 +1,7 @@
 print(">>> web/__init__.py running")
 
 from flask import Blueprint
+from . import cpe
 
 # Create ONE blueprint
 bp = Blueprint(
@@ -15,3 +16,4 @@ from . import routes
 
 print(">>> importing product handlers")
 from . import products
+
