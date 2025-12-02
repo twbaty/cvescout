@@ -1,88 +1,63 @@
-#app/tools/fetch_cpe.py
+# app/tools/fetch_cpe.py
 """
-Fetches the full CPE catalog from the NVD API v2 and stores it
-into the CPEDictionary table.
-
-Requires environment variable: NVD_API_KEY
+Fetch the official CPE 2.3 dictionary from NVD's static feed.
+No paging. No API key. No deprecated endpoints.
 """
 
-import os
-import time
+import gzip
 import json
+import tempfile
 import urllib.request
-import urllib.parse
 
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-API_KEY = os.getenv("NVD_API_KEY")
-BASE_URL = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
-PAGE_SIZE = 2000   # Max allowed
-
-
-def api_get(start_index):
-    params = {
-        "resultsPerPage": PAGE_SIZE,
-        "startIndex": start_index,
-        "apiKey": API_KEY
-    }
-
-    url = BASE_URL + "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "cvescout/1.0"})
-
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/2.3/nvd_cpe_dictionary_2.3.json.gz"
 
 
 def fetch_and_import():
-    if not API_KEY:
-        print("ERROR: Missing NVD_API_KEY environment variable.")
-        return
+    print(">>> Starting CPE dictionary import...")
+    print(f">>> Downloading: {CPE_URL}")
 
-    print(">>> Fetching CPE records from NVD API...")
+    # Download feed
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    urllib.request.urlretrieve(CPE_URL, tmp.name)
 
+    print(">>> Decompressing JSON...")
+    with gzip.open(tmp.name, "rt", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    items = payload.get("matches", [])
+
+    print(f">>> Loaded {len(items)} CPE entries from feed.")
+
+    # Import into DB
     db = SessionLocal()
     db.query(CPEDictionary).delete()
     db.commit()
 
-    start = 0
-    total = 0
+    count = 0
+    for item in items:
+        cpe23 = item.get("cpe23Uri")
+        if not cpe23:
+            continue
 
-    while True:
-        print(f">>> Fetching page at index {start}...")
-        data = api_get(start)
+        vendor = item.get("vendor", "")
+        product = item.get("product", "")
+        version = item.get("version", "")
 
-        items = data.get("products", [])
-        if not items:
-            break
+        row = CPEDictionary(
+            vendor=vendor,
+            product=product,
+            version=version,
+            cpe_uri=cpe23,
+        )
+        db.add(row)
+        count += 1
 
-        for entry in items:
-            c = entry.get("cpe", {})
-            uri = c.get("cpeName")
-            if not uri:
-                continue
-
-            row = CPEDictionary(
-                vendor=c.get("cpeVendor", ""),
-                product=c.get("cpeProduct", ""),
-                version=c.get("cpeVersion", ""),
-                cpe_uri=uri,
-            )
-            db.add(row)
-            total += 1
-
-        db.commit()
-
-        total_results = data.get("totalResults", 0)
-        start += PAGE_SIZE
-
-        if start >= total_results:
-            break
-
-        time.sleep(1.2)
-
+    db.commit()
     db.close()
-    print(f">>> DONE. Imported {total} CPE entries.")
+    print(f">>> DONE. Imported {count} CPE entries.")
 
 
 if __name__ == "__main__":
