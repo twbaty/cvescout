@@ -1,64 +1,106 @@
-# app/tools/fetch_cpe.py
-
-import gzip
-import xml.etree.ElementTree as ET
-from urllib.request import urlopen
-
+import json
+import time
+import sys
+import urllib.request
+import urllib.parse
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-CPE_URL = "https://nvd.nist.gov/feeds/xml/cpe/dictionary/official-cpe-dictionary_v2.3.xml.gz"
+API_URL = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
+API_KEY = ""   # ← PUT YOUR API KEY HERE
 
 
-def fetch_and_import():
-    print(">>> Downloading CPE dictionary...")
+def fetch_page(keyword, start_index=0):
+    """Fetch a single page of CPE results."""
+    params = {
+        "keywordSearch": keyword,
+        "startIndex": start_index,
+        "resultsPerPage": 2000
+    }
 
-    response = urlopen(CPE_URL)
-    data = gzip.decompress(response.read())
+    url = API_URL + "?" + urllib.parse.urlencode(params)
 
-    print(">>> Parsing XML...")
-    root = ET.fromstring(data)
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "apiKey": API_KEY
+        }
+    )
 
-    ns = {"cpe": "http://cpe.mitre.org/dictionary/2.0"}
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
-    rows = []
-    for item in root.findall(".//cpe:generator/cpe:item", ns):
-        name = item.get("name")  # cpe:/a:vendor:product:version etc.
 
-        if not name:
-            continue
+def fetch_all(keyword):
+    """Fetch all CPE entries for a given keyword."""
+    print(f">>> Fetching CPEs for keyword: {keyword}")
+    results = []
 
-        parts = name.split(":")
+    start = 0
+    while True:
+        data = fetch_page(keyword, start)
+        cpes = data.get("products", [])
+        results.extend(cpes)
 
-        # cpe:/<part>:<vendor>:<product>:<version>:...
-        vendor = parts[3] if len(parts) > 3 else ""
-        product = parts[4] if len(parts) > 4 else ""
-        version = parts[5] if len(parts) > 5 else ""
+        total = data.get("totalResults", 0)
+        print(f"    downloaded {len(results)}/{total}")
 
-        rows.append((vendor, product, version, name))
+        if len(results) >= total:
+            break
 
-    print(f">>> Parsed {len(rows)} entries. Importing to DB...")
+        start += 2000
+        time.sleep(1.2)  # NVD rate limit
 
+    return results
+
+
+def import_cpes(keyword):
     db = SessionLocal()
-    try:
-        db.query(CPEDictionary).delete()
 
-        for vendor, product, version, uri in rows:
-            db.add(CPEDictionary(
-                vendor=vendor,
-                product=product,
-                version=version,
-                cpe_uri=uri
-            ))
+    try:
+        entries = fetch_all(keyword)
+        print(f">>> Importing {len(entries)} CPE records...")
+
+        for item in entries:
+            cpe23 = item.get("cpe", {})
+            if not cpe23:
+                continue
+
+            part = cpe23.get("part")
+            vendor = cpe23.get("vendor")
+            product = cpe23.get("product")
+            version = cpe23.get("version")
+
+            uri = f"cpe:2.3:{part}:{vendor}:{product}:{version}"
+
+            db.add(
+                CPEDictionary(
+                    vendor=vendor or "",
+                    product=product or "",
+                    version=version or "",
+                    cpe_uri=uri
+                )
+            )
 
         db.commit()
-        print(">>> DONE. Imported CPE dictionary.")
+        print(">>> Import completed.")
     except Exception as e:
         db.rollback()
-        print(f"ERROR: {e}")
+        print("ERROR:", e)
     finally:
         db.close()
 
 
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python -m app.tools.fetch_cpe <keyword>")
+        print("Example: python -m app.tools.fetch_cpe windows")
+        sys.exit(1)
+
+    keyword = sys.argv[1]
+    import_cpes(keyword)
+
+
 if __name__ == "__main__":
-    fetch_and_import()
+    main()
