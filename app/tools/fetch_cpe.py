@@ -1,80 +1,88 @@
-# app/tools/fetch_cpe.py
+#app/tools/fetch_cpe.py
 """
-Fetches the full CPE dictionary from NVD (JSON.gz file)
-and loads it into the CPEDictionary table.
+Fetches the full CPE catalog from the NVD API v2 and stores it
+into the CPEDictionary table.
 
-This method avoids the deprecated CPE REST API.
+Requires environment variable: NVD_API_KEY
 """
 
 import os
+import time
 import json
-import gzip
 import urllib.request
-import tempfile
+import urllib.parse
 
 from app.db import SessionLocal
 from app.models import CPEDictionary
 
-CPE_URL = "https://nvd.nist.gov/feeds/json/cpe/dictionary/official-cpe-dictionary_v2.3.json.gz"
+API_KEY = os.getenv("NVD_API_KEY")
+BASE_URL = "https://services.nvd.nist.gov/rest/json/cpes/2.0"
+PAGE_SIZE = 2000   # Max allowed
 
 
-def download_cpe():
-    """Download the gzipped CPE dictionary."""
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json.gz")
-    tmp.close()
+def api_get(start_index):
+    params = {
+        "resultsPerPage": PAGE_SIZE,
+        "startIndex": start_index,
+        "apiKey": API_KEY
+    }
 
-    print(f">>> Downloading: {CPE_URL}")
-    urllib.request.urlretrieve(CPE_URL, tmp.name)
-    return tmp.name
+    url = BASE_URL + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"User-Agent": "cvescout/1.0"})
 
-
-def load_json_gz(path):
-    """Load and decompress the gzipped JSON."""
-    with gzip.open(path, "rt", encoding="utf-8") as f:
-        return json.load(f)
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def fetch_and_import():
-    print(">>> Starting CPE dictionary import...")
+    if not API_KEY:
+        print("ERROR: Missing NVD_API_KEY environment variable.")
+        return
 
-    gz_path = download_cpe()
-    print(">>> Decompressing JSON...")
-    data = load_json_gz(gz_path)
-
-    items = data.get("matches", [])
-    print(f">>> Total entries in dictionary: {len(items)}")
+    print(">>> Fetching CPE records from NVD API...")
 
     db = SessionLocal()
     db.query(CPEDictionary).delete()
     db.commit()
 
-    count = 0
+    start = 0
+    total = 0
 
-    for entry in items:
-        cpe = entry.get("cpe23Uri")
-        if not cpe:
-            continue
+    while True:
+        print(f">>> Fetching page at index {start}...")
+        data = api_get(start)
 
-        vendor = entry.get("vendor", "")
-        product = entry.get("product", "")
-        version = entry.get("version", "")
+        items = data.get("products", [])
+        if not items:
+            break
 
-        row = CPEDictionary(
-            vendor=vendor,
-            product=product,
-            version=version,
-            cpe_uri=cpe,
-        )
-        db.add(row)
-        count += 1
+        for entry in items:
+            c = entry.get("cpe", {})
+            uri = c.get("cpeName")
+            if not uri:
+                continue
 
-        if count % 2000 == 0:
-            db.commit()
+            row = CPEDictionary(
+                vendor=c.get("cpeVendor", ""),
+                product=c.get("cpeProduct", ""),
+                version=c.get("cpeVersion", ""),
+                cpe_uri=uri,
+            )
+            db.add(row)
+            total += 1
 
-    db.commit()
+        db.commit()
+
+        total_results = data.get("totalResults", 0)
+        start += PAGE_SIZE
+
+        if start >= total_results:
+            break
+
+        time.sleep(1.2)
+
     db.close()
-
-    print(f">>> DONE. Imported {count} CPE entries.")
+    print(f">>> DONE. Imported {total} CPE entries.")
 
 
 if __name__ == "__main__":
