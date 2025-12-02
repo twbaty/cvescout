@@ -1,19 +1,15 @@
-print(">>> web/__init__.py running")
+# app/web/__init__.py
 
 from flask import Blueprint
-from . import cpe
 
-# Create ONE blueprint
+# 1️⃣ Create the blueprint FIRST
 bp = Blueprint(
     "web",
     __name__,
     template_folder="templates"
 )
 
-# Import routes so they get attached to bp
-print(">>> importing route handlers")
+# 2️⃣ Import route modules AFTER bp exists
 from . import routes
-
-print(">>> importing product handlers")
 from . import products
-
+from . import cpe
