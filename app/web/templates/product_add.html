@@ -7,11 +7,12 @@
 
 <h1>Add Product</h1>
 
-<form action="/products/add" method="POST">
+<form action="{{ url_for('web.add_product_submit') }}" method="POST">
+
     <label>Vendor:</label><br>
     <input type="text" name="vendor" required><br><br>
 
-    <label>Product Name:</label><br>
+    <label>Name:</label><br>
     <input type="text" name="name" required><br><br>
 
     <label>Version:</label><br>
@@ -19,27 +20,28 @@
 
     <label>CPE URI:</label><br>
     <select name="cpe_uri">
-        <option value="">(none)</option>
-        {% for cpe in cpes %}
-            <option value="{{ cpe.cpe_uri }}">
-                {{ cpe.vendor }} — {{ cpe.product }} — {{ cpe.version }}
-            </option>
+        <option value="">-- None / Not Set --</option>
+        {% for c in cpes %}
+        <option value="{{ c.cpe_uri }}">
+            {{ c.vendor }} — {{ c.product }} — {{ c.version or "*" }}
+        </option>
         {% endfor %}
-    </select>
-    <br><br>
+    </select><br><br>
 
-    <label>Tags (comma separated):</label><br>
+    <label>Tags (comma-separated):</label><br>
     <input type="text" name="tags"><br><br>
 
-    <label>Active:</label>
-    <input type="checkbox" name="active" checked><br><br>
+    <label>
+        <input type="checkbox" name="active" checked>
+        Active
+    </label><br><br>
 
-    <button type="submit">Save Product</button>
+    <button type="submit">Add Product</button>
 </form>
 
-<p>
-    <a href="/products">Back to Products</a>
-</p>
+<hr>
+
+<a href="{{ url_for('web.products') }}">Back to Product List</a>
 
 </body>
 </html>
